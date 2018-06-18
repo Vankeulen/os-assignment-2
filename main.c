@@ -6,9 +6,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <errno.h>
-#include <time.h>
-
-typedef struct sigaction Sigaction;
+#include <sys/auxv.h>
+#include <sys/time.h>
 
 // Waits a number of milliseconds
 int waitSync(int millis) {
@@ -16,14 +15,14 @@ int waitSync(int millis) {
 	if (millis <= 0) { return 0; }
 
 	struct timeval now, start;
-	gettimeofday(&start, NULL);
+	assert(gettimeofday(&start, NULL) == 0);
 	
 	while (1) { // while (true)
 		// Extremely wasteful (but accurate) way of waiting
 		// Constantly poll for updated time,
 		// and check to see if enough has elapsed.
 
-		gettimeofday(&now, NULL);
+		assert(gettimeofday(&now, NULL) == 0);
 		long int diff_usec = now.tv_usec - start.tv_usec;
 		long int diff_sec = now.tv_sec - start.tv_sec;
 		
@@ -35,7 +34,6 @@ int waitSync(int millis) {
 		
 	}
 }
-
 // Signal handler methods. 
 void handlerA(int signum) {
 	printf("handlerA, got signal %d\n", signum);
@@ -47,26 +45,19 @@ void handlerC(int signum) {
 	printf("handlerC, got signal %d\n", signum);
 }
 
-// waits milliseconds, then sends a signal to a pid
-void sendSig(int waitmillis, pid_t pid, int sig) {
-	waitSync(waitmillis);
-	printf("Child: Sending signal %d\n", sig);
-	kill(pid, sig);
-}
-
 
 int main(void) {
 	
 	// Set up handler information and register signal handlers
-	Sigaction actA;
+	struct sigaction actA;
 	actA.sa_handler = handlerA;
 	assert(sigaction(25, &actA, NULL ) == 0);
 
-	Sigaction actB;
+	struct sigaction actB;
 	actB.sa_handler = handlerB;
-	assert(sigaction(12, &actB, NULL ) == 0);
+	assert(sigaction(30, &actB, NULL ) == 0);
 
-	Sigaction actC;
+	struct sigaction actC;
 	actC.sa_handler = handlerC;
 	assert(sigaction(31, &actC, NULL ) == 0);
 
@@ -75,29 +66,19 @@ int main(void) {
 	
 	if (cpid == 0) {
 		// Child process:
-		
-		printf("hallo warld\n");
-		sendSig(330, pid, 25);
-		sendSig(330, pid, 12);
-		sendSig(330, pid, 12);
-		for (int i = 0; i < 3; i++) {
-			sendSig(0, pid, 12);
-		}
+		static char buffer[256];
+		assert(sprintf(buffer, "./child %d", pid) > 0);
 
-		sendSig(330, pid, 31);
-		
-		waitSync(100);
-		printf("Child: Terminating parent with signal 9\n");
-		kill(pid, 9);
-
+		execl("/bin/sh", "sh", "-c", buffer, (char*)0);
+		perror("execl");
 	} else {
 		// Parent process: 
 
 		int cnt = 0;
 		while (1) {
 			waitSync(1);
-			printf(".");
-			if ( ! ( ++cnt % 32 ) ) { printf("\n"); }
+			assert(printf("."));
+			if ( ! ( ++cnt % 32 ) ) { assert(printf("\n")); }
 		}
 	}
 
